@@ -15,7 +15,7 @@ import nl.u2.netlib.exception.InvalidReadException;
 public class NioTcpPipeline extends NioPipeline {
 
 	private final Object writeLock = new Object();
-	private int currentBufferLength;
+	private int currentBufferLength = -1;
 	
 	protected SocketChannel channel;
 	protected SelectionKey key;
@@ -32,7 +32,7 @@ public class NioTcpPipeline extends NioPipeline {
 		writeBuffer.clear();
 		readBuffer.clear();
 		readBuffer.flip();
-		currentBufferLength = 0;
+		currentBufferLength = -1;
 		
 		channel = selector.provider().openSocketChannel();
 		channel.socket().setTcpNoDelay(true);
@@ -47,7 +47,7 @@ public class NioTcpPipeline extends NioPipeline {
 		writeBuffer.clear();
 		readBuffer.clear();
 		readBuffer.flip();
-		currentBufferLength = 0;
+		currentBufferLength = -1;
 		
 		this.channel = channel;
 		channel.configureBlocking(false);
@@ -64,6 +64,11 @@ public class NioTcpPipeline extends NioPipeline {
 		
 		synchronized(writeLock) {
 			int start = writeBuffer.position();
+			if(start < 0 || start + 4 > writeBuffer.limit()) {
+				writeBuffer.rewind();
+				return;
+			}
+			
 			writeBuffer.position(start + 4);
 			writeBuffer.put(buffer);
 			int end = writeBuffer.position();
@@ -104,7 +109,7 @@ public class NioTcpPipeline extends NioPipeline {
 			throw new ClosedChannelException();
 		}
 		
-		if(currentBufferLength == 0) {
+		if(currentBufferLength == -1) {
 			if(readBuffer.remaining() < 4) {
 				readBuffer.compact();
 				int read = channel.read(readBuffer);
@@ -119,7 +124,7 @@ public class NioTcpPipeline extends NioPipeline {
 			}
 			currentBufferLength = readBuffer.getInt();
 			
-			if(currentBufferLength <= 0) {
+			if(currentBufferLength < 0) {
 				throw new InvalidReadException("Invalid buffer length: " + currentBufferLength);
 			}
 			
@@ -143,7 +148,7 @@ public class NioTcpPipeline extends NioPipeline {
 				return null;
 			}
 		}
-		currentBufferLength = 0;
+		currentBufferLength = -1;
 		
 		int start = readBuffer.position();
 		int limit = readBuffer.limit();
