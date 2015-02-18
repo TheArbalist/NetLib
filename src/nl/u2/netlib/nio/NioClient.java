@@ -6,17 +6,15 @@ import java.nio.ByteBuffer;
 import java.nio.channels.CancelledKeyException;
 import java.nio.channels.SelectionKey;
 import java.nio.channels.Selector;
-import java.nio.channels.ServerSocketChannel;
-import java.nio.channels.SocketChannel;
 import java.util.Iterator;
 import java.util.Set;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
-import nl.u2.netlib.AbstractServer;
+import nl.u2.netlib.AbstractClient;
 
-public class NioServer extends AbstractServer implements Runnable {
+public class NioClient extends AbstractClient implements Runnable {
 
 	private static final int DEFAULT_BUFFER_SIZE = 2048;
 	
@@ -25,15 +23,15 @@ public class NioServer extends AbstractServer implements Runnable {
 	private int emptySelects = 0;
 	
 	protected Selector selector;
-	protected ServerSocketChannel server;
+	protected NioSession session;
 	
 	protected int bufferSize;
 	
-	public NioServer() {
+	public NioClient() {
 		this(DEFAULT_BUFFER_SIZE);
 	}
 	
-	public NioServer(int bufferSize) {
+	public NioClient(int bufferSize) {
 		try {
 			selector = Selector.open();
 		} catch(IOException e) {
@@ -44,17 +42,18 @@ public class NioServer extends AbstractServer implements Runnable {
 	}
 	
 	@Override
-	protected void handleBind(SocketAddress tcpAddress, SocketAddress udpAddress) throws IOException {
+	protected void handleConnect(SocketAddress tcpAddress, SocketAddress udpAddress) throws IOException {
 		synchronized(updateLock) {
 			selector.wakeup();
+			
 			try {
-				server = selector.provider().openServerSocketChannel();
-				server.bind(tcpAddress);
-				server.configureBlocking(false);
-				server.register(selector, SelectionKey.OP_ACCEPT);
+				session = new NioSession(this, bufferSize);
+				session.tcp.connect(session, selector, tcpAddress);
 				
 				executor = Executors.newSingleThreadScheduledExecutor();
 				executor.scheduleAtFixedRate(this, 0, 25, TimeUnit.MILLISECONDS);
+				
+				fireSessionConnected(session);
 			} catch(IOException e) {
 				close();
 				throw e;
@@ -89,19 +88,15 @@ public class NioServer extends AbstractServer implements Runnable {
 					
 					NioSession session = (NioSession) key.attachment();
 					try {
-						if(session != null) {//TCP Read or write -> channel has been accepted
+						if(session != null) {//TCP Read or write -> channel has been connected
 							if(key.isReadable()) {
-								readOperation(session);
-							}
-							if(key.isWritable()) {
-								writeOperation(session);
+								readOperation();
 							}
 							
-							continue;
-						}
-						
-						if(key.isAcceptable()) {
-							acceptOperation();
+							if(key.isWritable()) {
+								writeOperation();
+							}
+							
 							continue;
 						}
 					} catch(CancelledKeyException ex) {
@@ -128,7 +123,7 @@ public class NioServer extends AbstractServer implements Runnable {
 		}
 	}
 	
-	private void readOperation(NioSession session) {
+	private void readOperation() {
 		try {
 			while(true) {
 				ByteBuffer buffer = session.tcp.readBuffer();
@@ -143,30 +138,11 @@ public class NioServer extends AbstractServer implements Runnable {
 		}
 	}
 	
-	private void writeOperation(NioSession session) {
+	private void writeOperation() {
 		try {
 			session.tcp.writeBuffer();
 		} catch (IOException ex) {
 			session.close();
-		}
-	}
-	
-	private void acceptOperation() {
-		ServerSocketChannel server = this.server;
-		if(server == null) {
-			return;
-		}
-		
-		try {
-			SocketChannel channel = server.accept();
-			if(channel != null) {
-				NioSession session = new NioSession(this, bufferSize);
-				SelectionKey key = session.tcp.accept(selector, channel);
-				key.attach(session);
-				
-				fireSessionConnected(session);
-			}
-		} catch(IOException e) {
 		}
 	}
 
@@ -176,15 +152,12 @@ public class NioServer extends AbstractServer implements Runnable {
 			executor.shutdownNow();
 			executor = null;
 		}
-		
-		if(server != null) {
-			try {
-				server.close();
-			} catch (IOException e) {
-			}
-			server = null;
+
+		if(session != null) {
+			session.close();
+			session = null;
 		}
-		
+
 		synchronized (updateLock) {
 			selector.wakeup();
 			try {

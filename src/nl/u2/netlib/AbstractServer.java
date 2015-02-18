@@ -10,7 +10,7 @@ public abstract class AbstractServer extends AbstractEndPoint implements Server 
 	
 	protected abstract void handleClose();
 	
-	protected boolean running;
+	private boolean running;
 	
 	public void bind(int tcpPort, int udpPort) throws IOException {
 		if(tcpPort < 0 || udpPort < 0) {

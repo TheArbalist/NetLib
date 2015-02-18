@@ -2,6 +2,7 @@ package nl.u2.netlib.nio;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
+import java.net.SocketAddress;
 import java.nio.ByteBuffer;
 import java.nio.channels.ClosedChannelException;
 import java.nio.channels.SelectionKey;
@@ -25,6 +26,21 @@ public class NioTcpPipeline extends NioPipeline {
 		writeBuffer = ByteBuffer.allocate(bufferSize);
 		readBuffer = ByteBuffer.allocate(bufferSize);
 		readBuffer.flip();
+	}
+	
+	protected void connect(NioSession session, Selector selector, SocketAddress adress) throws IOException {
+		writeBuffer.clear();
+		readBuffer.clear();
+		readBuffer.flip();
+		currentBufferLength = 0;
+		
+		channel = selector.provider().openSocketChannel();
+		channel.socket().setTcpNoDelay(true);
+		channel.connect(adress);
+		channel.configureBlocking(false);
+
+		key = channel.register(selector, SelectionKey.OP_READ);
+		key.attach(session);
 	}
 	
 	protected SelectionKey accept(Selector selector, SocketChannel channel) throws IOException {

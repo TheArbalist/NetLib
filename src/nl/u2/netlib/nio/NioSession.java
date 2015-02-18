@@ -20,7 +20,6 @@ public class NioSession implements Session {
 	}
 
 	public NioPipeline getUdpPipeline() {
-		// TODO Auto-generated method stub
 		return null;
 	}
 
@@ -29,10 +28,8 @@ public class NioSession implements Session {
 			tcp.close();
 			closed = true;
 			
-			endPoint.fireSessionDisconnected(this);
+			endPoint.fireSessionDisconnected(this);	
 		}
 	}
-
-	
 	
 }

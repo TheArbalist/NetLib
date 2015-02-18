@@ -10,7 +10,7 @@ public abstract class AbstractClient extends AbstractEndPoint implements Client 
 	
 	protected abstract void handleClose();
 	
-	protected boolean running;
+	private boolean running;
 	
 	public void connect(String host, int tcpPort, int udpPort) throws IOException {
 		if(host == null || host.isEmpty() || tcpPort < 0 || udpPort < 0) {
