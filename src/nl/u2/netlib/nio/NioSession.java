@@ -12,10 +12,12 @@ public class NioSession implements Session {
 	
 	protected EndPoint endPoint;
 	protected NioTcpPipeline tcp;
+	protected NioUdpPipeline udp;
 	
 	protected NioSession(EndPoint endPoint, int bufferSize) {
 		this.endPoint = endPoint;
 		tcp = new NioTcpPipeline(bufferSize);
+		udp = new NioUdpPipeline();
 		
 		running.set(true);
 	}
@@ -25,7 +27,7 @@ public class NioSession implements Session {
 	}
 
 	public NioPipeline getUdpPipeline() {
-		return null;
+		return udp;
 	}
 
 	public void close() {

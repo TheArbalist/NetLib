@@ -1,6 +1,7 @@
 package nl.u2.netlib.nio;
 
 import java.io.IOException;
+import java.net.InetSocketAddress;
 import java.net.SocketAddress;
 import java.nio.ByteBuffer;
 import java.nio.channels.CancelledKeyException;
@@ -25,6 +26,7 @@ public class NioClient extends AbstractClient implements Runnable {
 	
 	protected Selector selector;
 	protected NioSession session;
+	protected NioDatagramPipeline datagramPipeline;
 	
 	protected int bufferSize;
 	
@@ -39,7 +41,7 @@ public class NioClient extends AbstractClient implements Runnable {
 			throw new RuntimeException("Error opening selector.", e);
 		}
 		
-		this.bufferSize = bufferSize;
+		datagramPipeline = new NioDatagramPipeline(this.bufferSize = bufferSize);
 	}
 	
 	@Override
@@ -51,16 +53,32 @@ public class NioClient extends AbstractClient implements Runnable {
 				session = new NioSession(this, bufferSize);
 				session.tcp.connect(session, selector, tcpAddress);
 				
+				datagramPipeline.connect(selector, udpAddress);
+				session.udp.pipeline = datagramPipeline;
+				
+				InetSocketAddress address = (InetSocketAddress) datagramPipeline.channel.getLocalAddress();
+				session.udp.local = address;
+				session.udp.remote = (InetSocketAddress) udpAddress;
+				
 				executor = Executors.newSingleThreadScheduledExecutor();
 				executor.scheduleAtFixedRate(this, 0, 25, TimeUnit.MILLISECONDS);
 				
 				connected = true;
+				handshake(address);
 				fireSessionConnected(session);
 			} catch(IOException e) {
 				close();
 				throw e;
 			}
 		}
+	}
+	
+	private void handshake(InetSocketAddress address) throws IOException {
+		ByteBuffer buffer = ByteBuffer.allocate(4);
+		buffer.putInt(address.getPort());
+		buffer.flip();
+		
+		session.tcp.write(buffer);
 	}
 	
 	public final void run() {
@@ -90,17 +108,28 @@ public class NioClient extends AbstractClient implements Runnable {
 					
 					NioSession session = (NioSession) key.attachment();
 					try {
-						if(session != null) {//TCP Read or write -> channel has been connected
-							if(key.isReadable()) {
+						if(key.isReadable()) {
+							if(session != null) {
 								readOperation();
+							} else {
+								if(datagramPipeline.readAddressAndBuffer() == null) {
+									continue;
+								}
+								
+								ByteBuffer buffer = datagramPipeline.readBuffer();
+								if(buffer == null) {
+									continue;
+								}
+								
+								fireSessionReceived(this.session, buffer);
 							}
-							
-							if(key.isWritable()) {
-								writeOperation();
-							}
-							
-							continue;
 						}
+						
+						if(key.isWritable()) {
+							writeOperation();
+						}
+							
+						continue;
 					} catch(CancelledKeyException ex) {
 						if(session != null) {
 							session.close();
@@ -163,6 +192,8 @@ public class NioClient extends AbstractClient implements Runnable {
 			}
 			session = null;
 		}
+		
+		datagramPipeline.close();
 
 		synchronized (updateLock) {
 			selector.wakeup();

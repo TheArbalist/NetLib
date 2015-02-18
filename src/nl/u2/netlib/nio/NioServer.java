@@ -1,6 +1,7 @@
 package nl.u2.netlib.nio;
 
 import java.io.IOException;
+import java.net.InetSocketAddress;
 import java.net.SocketAddress;
 import java.nio.ByteBuffer;
 import java.nio.channels.CancelledKeyException;
@@ -9,7 +10,9 @@ import java.nio.channels.Selector;
 import java.nio.channels.ServerSocketChannel;
 import java.nio.channels.SocketChannel;
 import java.util.Iterator;
+import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -20,12 +23,14 @@ public class NioServer extends AbstractServer implements Runnable {
 
 	private static final int DEFAULT_BUFFER_SIZE = 2048;
 	
+	private final Map<SocketAddress, NioSession> sessions = new ConcurrentHashMap<SocketAddress, NioSession>();
 	private final Object updateLock = new Object();
 	private ScheduledExecutorService executor;
 	private int emptySelects = 0;
 	
 	protected Selector selector;
 	protected ServerSocketChannel server;
+	protected NioDatagramPipeline datagramPipeline;
 	
 	protected int bufferSize;
 	
@@ -40,7 +45,7 @@ public class NioServer extends AbstractServer implements Runnable {
 			throw new RuntimeException("Error opening selector.", e);
 		}
 		
-		this.bufferSize = bufferSize;
+		datagramPipeline = new NioDatagramPipeline(this.bufferSize = bufferSize);
 	}
 	
 	@Override
@@ -52,6 +57,8 @@ public class NioServer extends AbstractServer implements Runnable {
 				server.bind(tcpAddress);
 				server.configureBlocking(false);
 				server.register(selector, SelectionKey.OP_ACCEPT);
+				
+				datagramPipeline.bind(selector, udpAddress);
 				
 				executor = Executors.newSingleThreadScheduledExecutor();
 				executor.scheduleAtFixedRate(this, 0, 25, TimeUnit.MILLISECONDS);
@@ -104,6 +111,29 @@ public class NioServer extends AbstractServer implements Runnable {
 							acceptOperation();
 							continue;
 						}
+						
+						InetSocketAddress fromAddress;
+						try {
+							fromAddress = datagramPipeline.readAddressAndBuffer();
+						} catch(IOException e) {
+							continue;
+						}
+						
+						if(fromAddress == null) {
+							continue;
+						}
+						
+						session = sessions.get(fromAddress);
+						ByteBuffer buffer;
+						try {
+							buffer = datagramPipeline.readBuffer();
+						} catch(IOException e) {
+							continue;
+						}
+						
+						if(session != null) {
+							fireSessionReceived(session, buffer);
+						}
 					} catch(CancelledKeyException ex) {
 						if(session != null) {
 							session.close();
@@ -136,6 +166,20 @@ public class NioServer extends AbstractServer implements Runnable {
 					break;
 				}
 				
+				if(!sessions.containsValue(session)) {
+					if(buffer.remaining() >= 4) {
+						String ip = session.tcp.remoteAddress().getAddress().getHostAddress();
+						int port = buffer.getInt();
+						
+						InetSocketAddress address = new InetSocketAddress(ip, port);
+						session.udp.remote = address;
+						
+						sessions.put(address, session);
+						fireSessionConnected(session);
+						return;
+					}
+				}
+				
 				fireSessionReceived(session, buffer);
 			}
 		} catch (IOException e) {
@@ -161,10 +205,10 @@ public class NioServer extends AbstractServer implements Runnable {
 			SocketChannel channel = server.accept();
 			if(channel != null) {
 				NioSession session = new NioSession(this, bufferSize);
+				session.udp.pipeline = datagramPipeline;
+				session.udp.local = (InetSocketAddress) datagramPipeline.channel.getLocalAddress();
 				SelectionKey key = session.tcp.accept(selector, channel);
 				key.attach(session);
-				
-				fireSessionConnected(session);
 			}
 		} catch(IOException e) {
 		}
@@ -184,6 +228,8 @@ public class NioServer extends AbstractServer implements Runnable {
 			}
 			server = null;
 		}
+		
+		datagramPipeline.close();
 		
 		synchronized (updateLock) {
 			selector.wakeup();

@@ -130,7 +130,6 @@ public class NioTcpPipeline extends NioPipeline {
 			
 			if(currentBufferLength > readBuffer.capacity()) {
 				throw new InvalidReadException("Unable to read buffer larger than read buffer: " + currentBufferLength);
-				
 			}
 		}
 		
