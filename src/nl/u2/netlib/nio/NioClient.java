@@ -21,6 +21,7 @@ public class NioClient extends AbstractClient implements Runnable {
 	private final Object updateLock = new Object();
 	private ScheduledExecutorService executor;
 	private int emptySelects = 0;
+	private boolean connected;
 	
 	protected Selector selector;
 	protected NioSession session;
@@ -53,6 +54,7 @@ public class NioClient extends AbstractClient implements Runnable {
 				executor = Executors.newSingleThreadScheduledExecutor();
 				executor.scheduleAtFixedRate(this, 0, 25, TimeUnit.MILLISECONDS);
 				
+				connected = true;
 				fireSessionConnected(session);
 			} catch(IOException e) {
 				close();
@@ -152,9 +154,13 @@ public class NioClient extends AbstractClient implements Runnable {
 			executor.shutdownNow();
 			executor = null;
 		}
-
+		
 		if(session != null) {
 			session.close();
+			if(connected) {
+				connected = false;
+				fireSessionDisconnected(session);
+			}
 			session = null;
 		}
 
@@ -165,6 +171,7 @@ public class NioClient extends AbstractClient implements Runnable {
 			} catch (IOException e) {
 			}
 		}
+		
 	}
 
 }

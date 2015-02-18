@@ -3,6 +3,7 @@ package nl.u2.netlib;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public abstract class AbstractServer extends AbstractEndPoint implements Server {
 
@@ -10,24 +11,33 @@ public abstract class AbstractServer extends AbstractEndPoint implements Server 
 	
 	protected abstract void handleClose();
 	
-	private boolean running;
+	private AtomicBoolean running = new AtomicBoolean(false);
 	
 	public void bind(int tcpPort, int udpPort) throws IOException {
 		if(tcpPort < 0 || udpPort < 0) {
 			throw new IllegalArgumentException("Bind requires a valid TCP and UDP port.");
 		}
 		
-		if(running) {
+		if(running.getAndSet(true)) {
 			close();
 		}
 		
-		handleBind(new InetSocketAddress(tcpPort), new InetSocketAddress(udpPort));
-		running = true;
+		try {
+			handleBind(new InetSocketAddress(tcpPort), new InetSocketAddress(udpPort));
+		} catch(IOException e) {
+			running.set(false);
+			throw e;
+		}
 	}
 	
 	public void close() {
-		handleClose();
-		running = false;
+		if(running.getAndSet(false)) {
+			handleClose();
+		}
+	}
+	
+	public boolean isBound() {
+		return running.get();
 	}
 	
 }

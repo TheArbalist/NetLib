@@ -8,4 +8,6 @@ public interface Client extends EndPoint {
 	
 	public void close();
 	
+	public boolean isConnected();
+	
 }

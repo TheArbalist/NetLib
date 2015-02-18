@@ -8,4 +8,5 @@ public interface Server extends EndPoint {
 	
 	public void close();
 	
+	public boolean isBound();
 }
