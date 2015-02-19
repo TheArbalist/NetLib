@@ -8,4 +8,8 @@ public interface Session {
 	
 	public void close();
 	
+	public EndPoint getEndPoint();
+	
+	public boolean isActive();
+	
 }

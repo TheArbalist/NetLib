@@ -36,10 +36,30 @@ public class NioSession implements Session {
 			
 			if(endPoint instanceof Client) {
 				((Client) endPoint).close();
-			} else {
-				endPoint.fireSessionDisconnected(this);	
+			} else if (endPoint instanceof NioServer){
+				((NioServer) endPoint).closeOperation(this);
 			}
 		}
+	}
+	
+	public EndPoint getEndPoint() {
+		return endPoint;
+	}
+	
+	public boolean isActive() {
+		return running.get();
+	}
+	
+	@Override
+	public String toString() {
+		StringBuilder builder = new StringBuilder("Session[Type=NIO, State=");
+		if(running.get()) {
+			builder.append("active, TCP=").append(tcp.remoteAddress()).
+			append(", UDP=").append(udp.remoteAddress());
+		} else {
+			builder.append("inactive");
+		}
+		return builder.append("]").toString();
 	}
 	
 }

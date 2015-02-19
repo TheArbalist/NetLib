@@ -17,12 +17,12 @@ public class NioUdpPipeline extends NioPipeline {
 	}	
 	
 	public void write(ByteBuffer buffer) throws IOException {
-		NioDatagramPipeline server = this.pipeline;
-		if(server == null || remote == null) {
+		NioDatagramPipeline pipeline = this.pipeline;
+		if(pipeline == null || remote == null) {
 			throw new ClosedChannelException();
 		}
 		
-		server.write(remoteAddress(), buffer);
+		pipeline.write(remote, buffer);
 	}
 	
 	@Override

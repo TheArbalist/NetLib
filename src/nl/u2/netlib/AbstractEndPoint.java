@@ -24,8 +24,8 @@ public class AbstractEndPoint implements EndPoint {
 		}
 	}
 	
-	public void fireSessionReceived(Session session, ByteBuffer buffer) {
-		SessionReceivedEvent event = new SessionReceivedEvent(session, buffer);
+	public void fireSessionReceived(Session session, TransmissionProtocol protocol, ByteBuffer buffer) {
+		SessionReceivedEvent event = new SessionReceivedEvent(session, protocol, buffer);
 		
 		synchronized(listeners) {
 			for(SessionListener listener : listeners) {

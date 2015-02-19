@@ -8,7 +8,7 @@ public interface EndPoint {
 	
 	public void removeListener(SessionListener listener);
 	
-	public void fireSessionReceived(Session session, ByteBuffer buffer);
+	public void fireSessionReceived(Session session, TransmissionProtocol protocol, ByteBuffer buffer);
 	
 	public void fireSessionConnected(Session session);
 	

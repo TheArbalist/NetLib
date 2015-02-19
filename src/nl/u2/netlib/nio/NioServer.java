@@ -13,11 +13,11 @@ import java.util.Iterator;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.TimeUnit;
 
 import nl.u2.netlib.AbstractServer;
+import nl.u2.netlib.TransmissionProtocol;
 
 public class NioServer extends AbstractServer implements Runnable {
 
@@ -25,7 +25,7 @@ public class NioServer extends AbstractServer implements Runnable {
 	
 	private final Map<SocketAddress, NioSession> sessions = new ConcurrentHashMap<SocketAddress, NioSession>();
 	private final Object updateLock = new Object();
-	private ScheduledExecutorService executor;
+	private ExecutorService executor;
 	private int emptySelects = 0;
 	
 	protected Selector selector;
@@ -60,8 +60,8 @@ public class NioServer extends AbstractServer implements Runnable {
 				
 				datagramPipeline.bind(selector, udpAddress);
 				
-				executor = Executors.newSingleThreadScheduledExecutor();
-				executor.scheduleAtFixedRate(this, 0, 25, TimeUnit.MILLISECONDS);
+				executor = Executors.newSingleThreadExecutor();
+				executor.execute(this);
 			} catch(IOException e) {
 				close();
 				throw e;
@@ -71,10 +71,10 @@ public class NioServer extends AbstractServer implements Runnable {
 	
 	public final void run() {
 		try {
-			update();
+			for(;;) {
+				update();
+			}
 		} catch (IOException e) {
-			e.printStackTrace();
-			
 			close();
 		}
 	}
@@ -86,7 +86,19 @@ public class NioServer extends AbstractServer implements Runnable {
 		long start = System.currentTimeMillis();
 		int select = selector.select(250);
 		
-		if(select != 0) {
+		if(select == 0) {
+			emptySelects++;
+			if(emptySelects == 100) {
+				emptySelects = 0;
+				long elapsed = System.currentTimeMillis() - start;
+				try {
+					if(elapsed < 25) {
+						Thread.sleep(25 - elapsed);
+					}
+				} catch(InterruptedException e) {
+				}
+			}
+		} else {
 			emptySelects = 0;
 			Set<SelectionKey> keys = selector.selectedKeys();
 			synchronized(keys) {
@@ -96,10 +108,11 @@ public class NioServer extends AbstractServer implements Runnable {
 					
 					NioSession session = (NioSession) key.attachment();
 					try {
-						if(session != null) {//TCP Read or write -> channel has been accepted
+						if(session != null) {
 							if(key.isReadable()) {
 								readOperation(session);
 							}
+							
 							if(key.isWritable()) {
 								writeOperation(session);
 							}
@@ -116,6 +129,7 @@ public class NioServer extends AbstractServer implements Runnable {
 						try {
 							fromAddress = datagramPipeline.readAddressAndBuffer();
 						} catch(IOException e) {
+							e.printStackTrace();
 							continue;
 						}
 						
@@ -128,11 +142,12 @@ public class NioServer extends AbstractServer implements Runnable {
 						try {
 							buffer = datagramPipeline.readBuffer();
 						} catch(IOException e) {
+							e.printStackTrace();
 							continue;
 						}
 						
 						if(session != null) {
-							fireSessionReceived(session, buffer);
+							fireSessionReceived(session, TransmissionProtocol.UDP, buffer);
 						}
 					} catch(CancelledKeyException ex) {
 						if(session != null) {
@@ -141,18 +156,6 @@ public class NioServer extends AbstractServer implements Runnable {
 							key.channel().close();
 						}
 					}
-				}
-			}
-		} else {
-			emptySelects++;
-			if(emptySelects == 100) {
-				emptySelects = 0;
-				long elapsed = System.currentTimeMillis() - start;
-				try {
-					if(elapsed < 25) {
-						Thread.sleep(25 - elapsed);
-					}
-				} catch(InterruptedException e) {
 				}
 			}
 		}
@@ -176,11 +179,11 @@ public class NioServer extends AbstractServer implements Runnable {
 						
 						sessions.put(address, session);
 						fireSessionConnected(session);
-						return;
+						continue;
 					}
 				}
 				
-				fireSessionReceived(session, buffer);
+				fireSessionReceived(session, TransmissionProtocol.TCP, buffer);
 			}
 		} catch (IOException e) {
 			session.close();
@@ -207,11 +210,17 @@ public class NioServer extends AbstractServer implements Runnable {
 				NioSession session = new NioSession(this, bufferSize);
 				session.udp.pipeline = datagramPipeline;
 				session.udp.local = (InetSocketAddress) datagramPipeline.channel.getLocalAddress();
+				
 				SelectionKey key = session.tcp.accept(selector, channel);
 				key.attach(session);
 			}
 		} catch(IOException e) {
 		}
+	}
+	
+	protected void closeOperation(NioSession session) {
+		sessions.remove(session.udp.remote);
+		fireSessionDisconnected(session);	
 	}
 
 	@Override
@@ -238,6 +247,18 @@ public class NioServer extends AbstractServer implements Runnable {
 			} catch (IOException e) {
 			}
 		}
+	}
+	
+	@Override
+	public String toString() {
+		StringBuilder builder = new StringBuilder("Server[Type=NIO, State=");
+		if(isBound()) {
+			builder.append("bound, TCP=").append(server.socket().getLocalPort()).
+			append(", UDP=").append(datagramPipeline.channel.socket().getLocalPort());
+		} else {
+			builder.append("idle");
+		}
+		return builder.append("]").toString();
 	}
 
 }
