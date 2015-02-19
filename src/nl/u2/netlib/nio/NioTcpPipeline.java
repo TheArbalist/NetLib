@@ -56,6 +56,7 @@ public class NioTcpPipeline extends NioPipeline {
 		return key = channel.register(selector, SelectionKey.OP_READ);
 	}
 	
+	//TODO remove copy if possible
 	public void write(ByteBuffer buffer) throws IOException {
 		SocketChannel channel = this.channel;
 		if(channel == null) {

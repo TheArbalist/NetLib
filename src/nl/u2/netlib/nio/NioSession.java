@@ -2,11 +2,11 @@ package nl.u2.netlib.nio;
 
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import nl.u2.netlib.AbstractSession;
 import nl.u2.netlib.Client;
 import nl.u2.netlib.EndPoint;
-import nl.u2.netlib.Session;
 
-public class NioSession implements Session {
+public class NioSession extends AbstractSession {
 
 	private AtomicBoolean running = new AtomicBoolean(false);
 	

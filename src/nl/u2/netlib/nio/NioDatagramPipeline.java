@@ -87,6 +87,7 @@ public class NioDatagramPipeline {
 		return (InetSocketAddress) channel.receive(readBuffer);
 	}
 	
+	//TODO remove copy if possible
 	protected ByteBuffer readBuffer() throws IOException{
 		readBuffer.flip();
 		try {
@@ -95,8 +96,12 @@ public class NioDatagramPipeline {
 			}
 			
 			int length = readBuffer.getInt();
-			if(length < 0 || length > readBuffer.capacity()) {
-				return null;
+			if(length < 0) {
+				throw new InvalidReadException("Invalid buffer length: " + length);
+			}
+			
+			if(length > readBuffer.capacity()) {
+				throw new InvalidReadException("Unable to read buffer larger than read buffer: " + length);
 			}
 			
 			byte[] data = new byte[length];
