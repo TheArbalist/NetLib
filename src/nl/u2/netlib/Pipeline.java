@@ -1,12 +1,11 @@
 package nl.u2.netlib;
 
-import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 
 public interface Pipeline {
 
-	public void write(ByteBuffer buffer) throws IOException;
+	public void write(ByteBuffer buffer);
 	
 	public InetSocketAddress remoteAddress();
 	

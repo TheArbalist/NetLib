@@ -14,4 +14,6 @@ public interface EndPoint {
 	
 	public void fireSessionDisconnected(Session session);
 	
+	public void fireSessionException(Session session, Throwable cause);
+	
 }

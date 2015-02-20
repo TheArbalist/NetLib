@@ -42,7 +42,7 @@ public class NioServer extends AbstractServer implements Runnable {
 		try {
 			selector = Selector.open();
 		} catch(IOException e) {
-			throw new RuntimeException("Error opening selector.", e);
+			fireSessionException(null, e);
 		}
 		
 		datagramPipeline = new NioDatagramPipeline(this.bufferSize = bufferSize);
@@ -74,8 +74,9 @@ public class NioServer extends AbstractServer implements Runnable {
 			for(;;) {
 				update();
 			}
-		} catch (IOException e) {
+		} catch(IOException e) {
 			close();
+			fireSessionException(null, e);
 		}
 	}
 	
@@ -129,7 +130,7 @@ public class NioServer extends AbstractServer implements Runnable {
 						try {
 							fromAddress = datagramPipeline.readAddressAndBuffer();
 						} catch(IOException e) {
-							e.printStackTrace();
+							fireSessionException(null, e);
 							continue;
 						}
 						
@@ -142,19 +143,21 @@ public class NioServer extends AbstractServer implements Runnable {
 						try {
 							buffer = datagramPipeline.readBuffer();
 						} catch(IOException e) {
-							e.printStackTrace();
+							fireSessionException(session, e);
 							continue;
 						}
 						
 						if(session != null) {
 							fireSessionReceived(session, TransmissionProtocol.UDP, buffer);
 						}
-					} catch(CancelledKeyException ex) {
+					} catch(CancelledKeyException e) {
 						if(session != null) {
 							session.close();
 						} else {
 							key.channel().close();
 						}
+						
+						fireSessionException(session, e);
 					}
 				}
 			}
@@ -215,6 +218,7 @@ public class NioServer extends AbstractServer implements Runnable {
 				key.attach(session);
 			}
 		} catch(IOException e) {
+			fireSessionException(null, e);
 		}
 	}
 	

@@ -16,8 +16,8 @@ public class NioSession extends AbstractSession {
 	
 	protected NioSession(EndPoint endPoint, int bufferSize) {
 		this.endPoint = endPoint;
-		tcp = new NioTcpPipeline(bufferSize);
-		udp = new NioUdpPipeline();
+		tcp = new NioTcpPipeline(this, bufferSize);
+		udp = new NioUdpPipeline(this);
 		
 		running.set(true);
 	}
@@ -54,8 +54,8 @@ public class NioSession extends AbstractSession {
 	public String toString() {
 		StringBuilder builder = new StringBuilder("Session[Type=NIO, State=");
 		if(running.get()) {
-			builder.append("active, TCP=").append(tcp.remoteAddress()).
-			append(", UDP=").append(udp.remoteAddress());
+			builder.append("active, TCP=").append(tcp).
+					append(", UDP=").append(udp);
 		} else {
 			builder.append("inactive");
 		}

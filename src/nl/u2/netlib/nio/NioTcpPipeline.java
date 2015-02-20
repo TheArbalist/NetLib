@@ -16,13 +16,15 @@ public class NioTcpPipeline extends NioPipeline {
 
 	private final Object writeLock = new Object();
 	private int currentBufferLength = -1;
+	private NioSession session;
 	
 	protected SocketChannel channel;
 	protected SelectionKey key;
 	protected ByteBuffer writeBuffer;
 	protected ByteBuffer readBuffer;
 	
-	protected NioTcpPipeline(int bufferSize) {
+	protected NioTcpPipeline(NioSession session, int bufferSize) {
+		this.session = session;
 		writeBuffer = ByteBuffer.allocate(bufferSize);
 		readBuffer = ByteBuffer.allocate(bufferSize);
 		readBuffer.flip();
@@ -57,32 +59,36 @@ public class NioTcpPipeline extends NioPipeline {
 	}
 	
 	//TODO remove copy if possible
-	public void write(ByteBuffer buffer) throws IOException {
-		SocketChannel channel = this.channel;
-		if(channel == null) {
-			throw new ClosedChannelException();
-		}
-		
-		synchronized(writeLock) {
-			int start = writeBuffer.position();
-			if(start < 0 || start + 4 > writeBuffer.limit()) {
-				writeBuffer.rewind();
-				return;
+	public void write(ByteBuffer buffer) {
+		try {
+			SocketChannel channel = this.channel;
+			if(channel == null) {
+				throw new ClosedChannelException();
 			}
 			
-			writeBuffer.position(start + 4);
-			writeBuffer.put(buffer);
-			int end = writeBuffer.position();
-			
-			writeBuffer.position(start);
-			writeBuffer.putInt(end - 4 - start);
-			writeBuffer.position(end);
-			
-			if(start == 0 && !writeToSocket()) {
-				key.interestOps(SelectionKey.OP_READ | SelectionKey.OP_WRITE);
-			} else {
-				key.selector().wakeup();
+			synchronized(writeLock) {
+				int start = writeBuffer.position();
+				if(start < 0 || start + 4 > writeBuffer.limit()) {
+					writeBuffer.rewind();
+					return;
+				}
+				
+				writeBuffer.position(start + 4);
+				writeBuffer.put(buffer);
+				int end = writeBuffer.position();
+				
+				writeBuffer.position(start);
+				writeBuffer.putInt(end - 4 - start);
+				writeBuffer.position(end);
+				
+				if(start == 0 && !writeToSocket()) {
+					key.interestOps(SelectionKey.OP_READ | SelectionKey.OP_WRITE);
+				} else {
+					key.selector().wakeup();
+				}
 			}
+		} catch(IOException e) {
+			session.endPoint.fireSessionException(session, e);
 		}
 	}
 		
@@ -211,6 +217,18 @@ public class NioTcpPipeline extends NioPipeline {
 
 	public TransmissionProtocol protocol() {
 		return TransmissionProtocol.TCP;
+	}
+	
+	@Override
+	public String toString() {
+		StringBuilder builder = new StringBuilder("Pipeline[Type=NIO, Protocol=TCP, State=");
+		if(channel != null) {
+			builder.append("active, remote=").append(remoteAddress()).
+					append(", local=").append(localAddress());
+		} else {
+			builder.append("inactive");
+		}
+		return builder.append("]").toString();
 	}
 
 }

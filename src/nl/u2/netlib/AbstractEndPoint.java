@@ -6,9 +6,10 @@ import java.util.List;
 
 import nl.u2.netlib.event.SessionConnectedEvent;
 import nl.u2.netlib.event.SessionDisconnectedEvent;
+import nl.u2.netlib.event.SessionExceptionEvent;
 import nl.u2.netlib.event.SessionReceivedEvent;
 
-public class AbstractEndPoint implements EndPoint {
+public abstract class AbstractEndPoint implements EndPoint {
 
 	protected final List<SessionListener> listeners = new ArrayList<SessionListener>();
 
@@ -50,6 +51,16 @@ public class AbstractEndPoint implements EndPoint {
 		synchronized(listeners) {
 			for(SessionListener listener : listeners) {
 				listener.onSessionDisconnected(event);
+			}
+		}
+	}
+
+	public void fireSessionException(Session session, Throwable cause) {
+		SessionExceptionEvent event = new SessionExceptionEvent(session, cause);
+		
+		synchronized(listeners) {
+			for(SessionListener listener : listeners) {
+				listener.onExceptionThrown(event);
 			}
 		}
 	}

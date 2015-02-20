@@ -9,20 +9,27 @@ import nl.u2.netlib.TransmissionProtocol;
 
 public class NioUdpPipeline extends NioPipeline {
 	
+	private NioSession session;
+	
 	protected NioDatagramPipeline pipeline;
 	protected InetSocketAddress local;
 	protected InetSocketAddress remote;
 	
-	protected NioUdpPipeline() {
+	protected NioUdpPipeline(NioSession session) {
+		this.session = session;
 	}	
 	
-	public void write(ByteBuffer buffer) throws IOException {
-		NioDatagramPipeline pipeline = this.pipeline;
-		if(pipeline == null || remote == null) {
-			throw new ClosedChannelException();
+	public void write(ByteBuffer buffer) {
+		try {
+			NioDatagramPipeline pipeline = this.pipeline;
+			if(pipeline == null || remote == null) {
+				throw new ClosedChannelException();
+			}
+			
+			pipeline.write(remote, buffer);
+		} catch(IOException e) {
+			session.endPoint.fireSessionException(session, e);
 		}
-		
-		pipeline.write(remote, buffer);
 	}
 	
 	@Override
@@ -50,6 +57,18 @@ public class NioUdpPipeline extends NioPipeline {
 
 	public TransmissionProtocol protocol() {
 		return TransmissionProtocol.UDP;
+	}
+	
+	@Override
+	public String toString() {
+		StringBuilder builder = new StringBuilder("Pipeline[Type=NIO, Protocol=UDP, State=");
+		if(remote != null) {
+			builder.append("active, remote=").append(remote).
+					append(", local=").append(local);
+		} else {
+			builder.append("inactive");
+		}
+		return builder.append("]").toString();
 	}
 
 }

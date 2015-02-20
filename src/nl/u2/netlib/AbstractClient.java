@@ -13,7 +13,7 @@ public abstract class AbstractClient extends AbstractEndPoint implements Client 
 	
 	private AtomicBoolean running = new AtomicBoolean(false);
 	
-	public void connect(String host, int tcpPort, int udpPort) throws IOException {
+	public void connect(String host, int tcpPort, int udpPort) {
 		if(host == null || host.isEmpty() || tcpPort < 0 || udpPort < 0) {
 			throw new IllegalArgumentException("connect requires a valid host, TCP and UDP port.");
 		}
@@ -26,7 +26,7 @@ public abstract class AbstractClient extends AbstractEndPoint implements Client 
 			handleConnect(new InetSocketAddress(host, tcpPort), new InetSocketAddress(host, udpPort));
 		} catch(IOException e) {
 			running.set(false);
-			throw e;
+			fireSessionException(null, e);
 		}
 	}
 	

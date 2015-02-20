@@ -4,12 +4,12 @@ public abstract class AbstractSession implements Session {
 
 	private Object attachment;
 	
-	public <T> void setAttachment(T attachment) {
+	public synchronized <T> void setAttachment(T attachment) {
 		this.attachment = attachment;
 	}
 	
 	@SuppressWarnings("unchecked")
-	public <T> T getAttachment() {
+	public synchronized <T> T getAttachment() {
 		return (T) attachment;
 	}
 

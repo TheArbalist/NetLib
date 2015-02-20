@@ -38,7 +38,7 @@ public class NioClient extends AbstractClient implements Runnable {
 		try {
 			selector = Selector.open();
 		} catch(IOException e) {
-			throw new RuntimeException("Error opening selector.", e);
+			fireSessionException(session, e);
 		}
 		
 		datagramPipeline = new NioDatagramPipeline(this.bufferSize = bufferSize);
@@ -86,8 +86,9 @@ public class NioClient extends AbstractClient implements Runnable {
 			for(;;) {
 				update();
 			}
-		} catch (IOException e) {
+		} catch(IOException e) {
 			close();
+			fireSessionException(session, e);
 		}
 	}
 	
@@ -138,7 +139,7 @@ public class NioClient extends AbstractClient implements Runnable {
 								try {
 									buffer = datagramPipeline.readBuffer();
 								} catch(IOException e) {
-									e.printStackTrace();
+									fireSessionException(this.session, e);
 									continue;
 								}
 								
@@ -149,7 +150,8 @@ public class NioClient extends AbstractClient implements Runnable {
 						if(key.isWritable()) {
 							session.tcp.writeBuffer();
 						}
-					} catch(CancelledKeyException ex) {
+					} catch(CancelledKeyException e) {
+						fireSessionException(session, e);
 					}
 				}
 			}
@@ -186,12 +188,12 @@ public class NioClient extends AbstractClient implements Runnable {
 	
 	@Override
 	public String toString() {
-		StringBuilder builder = new StringBuilder("Server[Type=NIO, State=");
+		StringBuilder builder = new StringBuilder("Client[Type=NIO, State=");
 		if(isConnected()) {
 			builder.append("connected, TCP=").append(session.tcp).
-			append(", UDP=").append(session.udp);
+					append(", UDP=").append(session.udp);
 		} else {
-			builder.append("idle");
+			builder.append("inactive");
 		}
 		return builder.append("]").toString();
 	}

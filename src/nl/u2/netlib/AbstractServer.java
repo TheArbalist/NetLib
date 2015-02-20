@@ -13,7 +13,7 @@ public abstract class AbstractServer extends AbstractEndPoint implements Server 
 	
 	private AtomicBoolean running = new AtomicBoolean(false);
 	
-	public void bind(int tcpPort, int udpPort) throws IOException {
+	public void bind(int tcpPort, int udpPort) {
 		if(tcpPort < 0 || udpPort < 0) {
 			throw new IllegalArgumentException("Bind requires a valid TCP and UDP port.");
 		}
@@ -26,7 +26,7 @@ public abstract class AbstractServer extends AbstractEndPoint implements Server 
 			handleBind(new InetSocketAddress(tcpPort), new InetSocketAddress(udpPort));
 		} catch(IOException e) {
 			running.set(false);
-			throw e;
+			fireSessionException(null, e);
 		}
 	}
 	
