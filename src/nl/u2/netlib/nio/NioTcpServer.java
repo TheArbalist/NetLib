@@ -32,5 +32,4 @@ final class NioTcpServer implements NioServerChannel {
 	public boolean isActive() {
 		return server != null && server.isRegistered() && server.isOpen();
 	}
-
 }

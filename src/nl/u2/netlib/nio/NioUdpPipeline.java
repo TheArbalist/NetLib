@@ -12,7 +12,7 @@ public final class NioUdpPipeline extends AbstractPipeline {
 	InetSocketAddress local;
 	InetSocketAddress remote;
 	
-	NioUdpServer server;
+	NioUdpChannel channel;
 	
 	NioUdpPipeline(Connection connection) {
 		super(connection);
@@ -20,7 +20,7 @@ public final class NioUdpPipeline extends AbstractPipeline {
 
 	public void write(Packet packet) {
 		try {
-			server.write(packet.address(remote));
+			channel.write(packet.address(remote));
 		} catch(Throwable t) {
 			connection().endPoint().fireExceptionThrown(t);
 		}
@@ -43,7 +43,7 @@ public final class NioUdpPipeline extends AbstractPipeline {
 	}
 
 	public boolean isActive() {
-		return server != null && server.isActive();
+		return channel != null && channel.isActive();
 	}
 
 }

@@ -22,7 +22,7 @@ import nl.u2.netlib.packet.PacketHeaders;
 
 public final class NioServer extends AbstractEndPoint implements Server, Runnable {
 
-	public static final int DEFAULT_BUFFER_SIZE = 1024;
+	private static final int DEFAULT_BUFFER_SIZE = 1024;
 	
 	private final Map<SocketAddress, NioConnection> connections = new ConcurrentHashMap<SocketAddress, NioConnection>();
 	private final Object lock = new Object();
@@ -34,7 +34,7 @@ public final class NioServer extends AbstractEndPoint implements Server, Runnabl
 	private int bufferSize;
 	
 	private NioTcpServer tcp;
-	private NioUdpServer udp;
+	private NioUdpChannel udp;
 	
 	public NioServer() {
 		this(DEFAULT_BUFFER_SIZE);
@@ -50,7 +50,7 @@ public final class NioServer extends AbstractEndPoint implements Server, Runnabl
 		this.bufferSize = bufferSize;
 		
 		tcp = new NioTcpServer();
-		udp = new NioUdpServer(bufferSize);
+		udp = new NioUdpChannel(bufferSize);
 	}
 	
 	public void bind(int tcpPort, int udpPort) throws Exception {
@@ -150,7 +150,7 @@ public final class NioServer extends AbstractEndPoint implements Server, Runnabl
 									connection = new NioConnection(this, bufferSize);
 									
 									NioUdpPipeline pipeline = connection.udp();
-									pipeline.server = udp;
+									pipeline.channel = udp;
 									pipeline.local = udp.local;
 									
 									SelectionKey selectionKey = connection.tcp().accept(selector, channel);

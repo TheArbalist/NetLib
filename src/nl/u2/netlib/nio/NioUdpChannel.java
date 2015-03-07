@@ -12,19 +12,19 @@ import java.nio.channels.Selector;
 import nl.u2.netlib.packet.Packet;
 import nl.u2.netlib.util.DataUtil;
 
-final class NioUdpServer implements NioServerChannel {
+final class NioUdpChannel implements NioServerChannel {
 
 	private final Object lock = new Object();
 	
 	private ByteBuffer writeBuffer;
 	private ByteBuffer readBuffer;
 	
-	private DatagramChannel server;
+	private DatagramChannel channel;
 	private SelectionKey key;
 	
 	InetSocketAddress local;
 	
-	NioUdpServer(int bufferSize) {
+	NioUdpChannel(int bufferSize) {
 		writeBuffer = ByteBuffer.allocateDirect(bufferSize);
 		readBuffer = ByteBuffer.allocate(bufferSize);
 	}
@@ -33,16 +33,27 @@ final class NioUdpServer implements NioServerChannel {
 		clearBuffers();
 		
 		selector.wakeup();
-		server = selector.provider().openDatagramChannel();
-		server.bind(address);
-		server.configureBlocking(false);
-		key = server.register(selector, SelectionKey.OP_READ);
+		channel = selector.provider().openDatagramChannel();
+		channel.bind(address);
+		channel.configureBlocking(false);
+		key = channel.register(selector, SelectionKey.OP_READ);
 		
-		local = (InetSocketAddress) server.getLocalAddress();
+		local = (InetSocketAddress) channel.getLocalAddress();
+	}
+	
+	void connect (Selector selector, InetSocketAddress remoteAddress) throws Exception {
+		clearBuffers();
+	
+		channel = selector.provider().openDatagramChannel();
+		channel.socket().connect(remoteAddress);
+		channel.configureBlocking(false);
+		key = channel.register(selector, SelectionKey.OP_READ);
+		
+		local = (InetSocketAddress) channel.getLocalAddress();
 	}
 	
 	void write(Packet packet) throws Exception {
-		DatagramChannel server = this.server;
+		DatagramChannel server = this.channel;
 		if(server == null) {
 			throw new ClosedChannelException();
 		}
@@ -66,7 +77,7 @@ final class NioUdpServer implements NioServerChannel {
 	}
 	
 	SocketAddress readAddressAndBuffer() throws Exception {
-		DatagramChannel server = this.server;
+		DatagramChannel server = this.channel;
 		if(server == null) {
 			throw new ClosedChannelException();
 		}
@@ -118,13 +129,13 @@ final class NioUdpServer implements NioServerChannel {
 	}
 
 	public void close() throws Exception {
-		if(server != null) {
+		if(channel != null) {
 			try {
-				server.close();
+				channel.close();
 			} catch(Exception e) {
 				throw e;
 			} finally {
-				server = null;
+				channel = null;
 				
 				if(key != null) {
 					key.selector().wakeup();
@@ -136,7 +147,7 @@ final class NioUdpServer implements NioServerChannel {
 	}
 
 	public boolean isActive() {
-		return server != null && server.isRegistered() && server.isOpen();
+		return channel != null && channel.isRegistered() && channel.isOpen();
 	}
 
 }
