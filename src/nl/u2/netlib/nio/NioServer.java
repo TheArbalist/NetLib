@@ -1,13 +1,9 @@
 package nl.u2.netlib.nio;
 
-import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
-import java.nio.ByteBuffer;
-import java.nio.channels.CancelledKeyException;
 import java.nio.channels.SelectionKey;
 import java.nio.channels.Selector;
-import java.nio.channels.ServerSocketChannel;
 import java.nio.channels.SocketChannel;
 import java.util.Iterator;
 import java.util.Map;
@@ -15,24 +11,30 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicBoolean;
 
-import nl.u2.netlib.AbstractServer;
-import nl.u2.netlib.TransmissionProtocol;
+import nl.u2.netlib.AbstractEndPoint;
+import nl.u2.netlib.Server;
+import nl.u2.netlib.listener.event.ConnectionEstablishedEvent;
+import nl.u2.netlib.listener.event.PacketReceivedEvent;
+import nl.u2.netlib.packet.Packet;
+import nl.u2.netlib.packet.PacketHeaders;
 
-public class NioServer extends AbstractServer implements Runnable {
+public final class NioServer extends AbstractEndPoint implements Server, Runnable {
 
-	private static final int DEFAULT_BUFFER_SIZE = 2048;
+	public static final int DEFAULT_BUFFER_SIZE = 1024;
 	
-	private final Map<SocketAddress, NioSession> sessions = new ConcurrentHashMap<SocketAddress, NioSession>();
-	private final Object updateLock = new Object();
+	private final Map<SocketAddress, NioConnection> connections = new ConcurrentHashMap<SocketAddress, NioConnection>();
+	private final Object lock = new Object();
+	private final AtomicBoolean closed = new AtomicBoolean();
+
 	private ExecutorService executor;
-	private int emptySelects = 0;
+	private Selector selector;
+	private int emptySelects;
+	private int bufferSize;
 	
-	protected Selector selector;
-	protected ServerSocketChannel server;
-	protected NioDatagramPipeline datagramPipeline;
-	
-	protected int bufferSize;
+	private NioTcpServer tcp;
+	private NioUdpServer udp;
 	
 	public NioServer() {
 		this(DEFAULT_BUFFER_SIZE);
@@ -41,228 +43,190 @@ public class NioServer extends AbstractServer implements Runnable {
 	public NioServer(int bufferSize) {
 		try {
 			selector = Selector.open();
-		} catch(IOException e) {
-			fireSessionException(null, e);
+		} catch(Throwable t) {
+			super.fireExceptionThrown(t);
 		}
 		
-		datagramPipeline = new NioDatagramPipeline(this.bufferSize = bufferSize);
+		this.bufferSize = bufferSize;
+		
+		tcp = new NioTcpServer();
+		udp = new NioUdpServer(bufferSize);
 	}
 	
-	@Override
-	protected void handleBind(SocketAddress tcpAddress, SocketAddress udpAddress) throws IOException {
-		synchronized(updateLock) {
-			selector.wakeup();
+	public void bind(int tcpPort, int udpPort) throws Exception {
+		close();
+		
+		synchronized(lock) {
 			try {
-				server = selector.provider().openServerSocketChannel();
-				server.bind(tcpAddress);
-				server.configureBlocking(false);
-				server.register(selector, SelectionKey.OP_ACCEPT);
-				
-				datagramPipeline.bind(selector, udpAddress);
+				tcp.bind(selector, new InetSocketAddress(tcpPort));
+				udp.bind(selector, new InetSocketAddress(udpPort));
 				
 				executor = Executors.newSingleThreadExecutor();
 				executor.execute(this);
-			} catch(IOException e) {
+				
+				closed.set(false);
+			} catch(Exception e) {
 				close();
+				
 				throw e;
 			}
 		}
 	}
 	
-	public final void run() {
+	public void run() {
 		try {
-			for(;;) {
-				update();
+			while(!Thread.interrupted()) {
+				long start = System.currentTimeMillis();
+				int select = selector.select(250);
+				
+				if(select == 0) {
+					emptySelects++;
+					if(emptySelects == 100) {
+						emptySelects = 0;
+						long elapsed = System.currentTimeMillis() - start;
+						try {
+							if(elapsed < 25) {
+								Thread.sleep(25 - elapsed);
+							}
+						} catch(InterruptedException e) {
+						}
+					}
+				} else {
+					emptySelects = 0;
+					Set<SelectionKey> keys = selector.selectedKeys();
+					for(Iterator<SelectionKey> i = keys.iterator(); i.hasNext();) {
+						SelectionKey key = i.next();
+						i.remove();
+						
+						NioConnection connection = (NioConnection) key.attachment();
+						try {
+							if(connection != null) {//TCP Read or write.
+								if(key.isReadable()) {
+									try {
+										while(true) {
+											Packet packet = connection.tcp().readPacket();
+											if (packet == null) {
+												break;
+											}
+											
+											if(!connection.udpRegistered && packet.opcode() == PacketHeaders.PACKET_UDP_REGISTRATION) {
+												String ip = connection.tcp().remoteAddress().getAddress().getHostAddress();
+												int port = packet.readInt();
+												InetSocketAddress address = new InetSocketAddress(ip, port);
+												
+												connection.udp().remote = address;
+												connections.put(address, connection);
+												
+												connection.udpRegistered = true;
+												super.fireConnectionEstablished(new ConnectionEstablishedEvent(connection));
+												continue;
+											}
+
+											super.firePacketReceived(new PacketReceivedEvent(connection, packet));
+										}
+									} catch(Throwable t) {
+										connection.close();
+										
+										//super.fireExceptionThrown(t);
+										continue;
+									}
+								}
+								
+								if(key.isWritable()) {
+									try {
+										connection.tcp().writeBuffer();
+									} catch(Throwable t) {
+										connection.close();
+										continue;
+									}
+								}
+								
+								continue;
+							}
+							
+							if(key.isAcceptable()) {//TCP Accept
+								try {
+									SocketChannel channel = tcp.server.accept();
+									connection = new NioConnection(this, bufferSize);
+									
+									NioUdpPipeline pipeline = connection.udp();
+									pipeline.server = udp;
+									pipeline.local = udp.local;
+									
+									SelectionKey selectionKey = connection.tcp().accept(selector, channel);
+									selectionKey.attach(connection);
+								} catch(Throwable t) {
+								}
+								
+								continue;
+							}
+							
+							//Must be a UDP read operation.
+							try {
+								SocketAddress address = udp.readAddressAndBuffer();
+								if(address == null) {
+									continue;
+								}
+								
+								connection = connections.get(address);
+								Packet packet = udp.readPacket(address);
+								if(packet == null) {
+									continue;
+								}
+								
+								super.firePacketReceived(new PacketReceivedEvent(connection, packet));
+							} catch(Throwable t) {
+								t.printStackTrace();
+								
+								continue;
+							}
+						} catch(Throwable t) {
+							if(connection != null) {
+								connection.close();
+							} else {
+								key.channel().close();
+							}
+							
+							super.fireExceptionThrown(t);
+						}
+					}
+				}
 			}
-		} catch(IOException e) {
+		} catch(Throwable t) {
 			close();
-			fireSessionException(null, e);
+			
+			super.fireExceptionThrown(t);
 		}
 	}
 	
-	protected void update() throws IOException {
-		synchronized(updateLock) {
-		}
-		
-		long start = System.currentTimeMillis();
-		int select = selector.select(250);
-		
-		if(select == 0) {
-			emptySelects++;
-			if(emptySelects == 100) {
-				emptySelects = 0;
-				long elapsed = System.currentTimeMillis() - start;
+	public void close() {
+		if(!closed.getAndSet(true)) {
+			synchronized(lock) {
+				if(executor != null) {
+					executor.shutdownNow();
+					executor = null;
+				}
+				
 				try {
-					if(elapsed < 25) {
-						Thread.sleep(25 - elapsed);
-					}
-				} catch(InterruptedException e) {
-				}
-			}
-		} else {
-			emptySelects = 0;
-			Set<SelectionKey> keys = selector.selectedKeys();
-			synchronized(keys) {
-				for(Iterator<SelectionKey> i = keys.iterator(); i.hasNext();) {
-					SelectionKey key = i.next();
-					i.remove();
-					
-					NioSession session = (NioSession) key.attachment();
-					try {
-						if(session != null) {
-							if(key.isReadable()) {
-								readOperation(session);
-							}
-							
-							if(key.isWritable()) {
-								writeOperation(session);
-							}
-							
-							continue;
-						}
-						
-						if(key.isAcceptable()) {
-							acceptOperation();
-							continue;
-						}
-						
-						InetSocketAddress fromAddress;
-						try {
-							fromAddress = datagramPipeline.readAddressAndBuffer();
-						} catch(IOException e) {
-							fireSessionException(null, e);
-							continue;
-						}
-						
-						if(fromAddress == null) {
-							continue;
-						}
-						
-						session = sessions.get(fromAddress);
-						ByteBuffer buffer;
-						try {
-							buffer = datagramPipeline.readBuffer();
-						} catch(IOException e) {
-							fireSessionException(session, e);
-							continue;
-						}
-						
-						if(session != null) {
-							fireSessionReceived(session, TransmissionProtocol.UDP, buffer);
-						}
-					} catch(CancelledKeyException e) {
-						if(session != null) {
-							session.close();
-						} else {
-							key.channel().close();
-						}
-						
-						fireSessionException(session, e);
-					}
-				}
-			}
-		}
-	}
-	
-	private void readOperation(NioSession session) {
-		try {
-			while(true) {
-				ByteBuffer buffer = session.tcp.readBuffer();
-				if(buffer == null) {
-					break;
+					tcp.close();
+				} catch(Throwable t) {
+					super.fireExceptionThrown(t);
 				}
 				
-				if(!sessions.containsValue(session)) {
-					if(buffer.remaining() >= 4) {
-						String ip = session.tcp.remoteAddress().getAddress().getHostAddress();
-						int port = buffer.getInt();
-						
-						InetSocketAddress address = new InetSocketAddress(ip, port);
-						session.udp.remote = address;
-						
-						sessions.put(address, session);
-						fireSessionConnected(session);
-						continue;
-					}
+				try {
+					udp.close();
+				} catch(Throwable t) {
+					super.fireExceptionThrown(t);
 				}
 				
-				fireSessionReceived(session, TransmissionProtocol.TCP, buffer);
+				connections.clear();
 			}
-		} catch (IOException e) {
-			session.close();
 		}
-	}
-	
-	private void writeOperation(NioSession session) {
-		try {
-			session.tcp.writeBuffer();
-		} catch (IOException ex) {
-			session.close();
-		}
-	}
-	
-	private void acceptOperation() {
-		ServerSocketChannel server = this.server;
-		if(server == null) {
-			return;
-		}
-		
-		try {
-			SocketChannel channel = server.accept();
-			if(channel != null) {
-				NioSession session = new NioSession(this, bufferSize);
-				session.udp.pipeline = datagramPipeline;
-				session.udp.local = (InetSocketAddress) datagramPipeline.channel.getLocalAddress();
-				
-				SelectionKey key = session.tcp.accept(selector, channel);
-				key.attach(session);
-			}
-		} catch(IOException e) {
-			fireSessionException(null, e);
-		}
-	}
-	
-	protected void closeOperation(NioSession session) {
-		sessions.remove(session.udp.remote);
-		fireSessionDisconnected(session);	
 	}
 
-	@Override
-	protected void handleClose() {
-		if(executor != null) {
-			executor.shutdownNow();
-			executor = null;
-		}
-		
-		if(server != null) {
-			try {
-				server.close();
-			} catch (IOException e) {
-			}
-			server = null;
-		}
-		
-		datagramPipeline.close();
-		
-		synchronized (updateLock) {
-			selector.wakeup();
-			try {
-				selector.selectNow();
-			} catch (IOException e) {
-			}
-		}
+	public boolean isActive() {
+		return tcp.isActive() && udp.isActive();
 	}
-	
-	@Override
-	public String toString() {
-		StringBuilder builder = new StringBuilder("Server[Type=NIO, State=");
-		if(isBound()) {
-			builder.append("bound, TCP=").append(server.socket().getLocalPort()).
-			append(", UDP=").append(datagramPipeline.channel.socket().getLocalPort());
-		} else {
-			builder.append("idle");
-		}
-		return builder.append("]").toString();
-	}
+
 
 }

@@ -1,16 +1,21 @@
 package nl.u2.netlib;
 
 import java.net.InetSocketAddress;
-import java.nio.ByteBuffer;
+
+import nl.u2.netlib.packet.Packet;
 
 public interface Pipeline {
+	
+	void write(Packet packet);
+	
+	Connection connection();
 
-	public void write(ByteBuffer buffer);
+	InetSocketAddress localAddress();
 	
-	public InetSocketAddress remoteAddress();
+	InetSocketAddress remoteAddress();
 	
-	public InetSocketAddress localAddress();
+	TransmissionProtocol protocol();
 	
-	public TransmissionProtocol protocol();
+	boolean isActive();
 	
 }

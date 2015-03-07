@@ -2,71 +2,63 @@ package nl.u2.netlib.nio;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
-import java.net.SocketAddress;
 import java.nio.ByteBuffer;
 import java.nio.channels.ClosedChannelException;
 import java.nio.channels.SelectionKey;
 import java.nio.channels.Selector;
 import java.nio.channels.SocketChannel;
 
+import nl.u2.netlib.AbstractPipeline;
+import nl.u2.netlib.Connection;
 import nl.u2.netlib.TransmissionProtocol;
-import nl.u2.netlib.exception.InvalidReadException;
+import nl.u2.netlib.packet.Packet;
+import nl.u2.netlib.util.DataUtil;
 
-public class NioTcpPipeline extends NioPipeline {
+public final class NioTcpPipeline extends AbstractPipeline {
 
-	private final Object writeLock = new Object();
+	private final Object lock = new Object();
+	
+	private ByteBuffer writeBuffer;
+	private ByteBuffer readBuffer;
+	
+	private SocketChannel channel;
+	private SelectionKey key;
+	
 	private int currentBufferLength = -1;
-	private NioSession session;
 	
-	protected SocketChannel channel;
-	protected SelectionKey key;
-	protected ByteBuffer writeBuffer;
-	protected ByteBuffer readBuffer;
-	
-	protected NioTcpPipeline(NioSession session, int bufferSize) {
-		this.session = session;
+	NioTcpPipeline(Connection connection, int bufferSize) {
+		super(connection);
+		
 		writeBuffer = ByteBuffer.allocate(bufferSize);
 		readBuffer = ByteBuffer.allocate(bufferSize);
 		readBuffer.flip();
 	}
 	
-	protected void connect(NioSession session, Selector selector, SocketAddress adress) throws IOException {
-		writeBuffer.clear();
-		readBuffer.clear();
+	SelectionKey accept(Selector selector, SocketChannel channel) throws Exception {
+		clearBuffers();
 		readBuffer.flip();
 		currentBufferLength = -1;
-		
-		channel = selector.provider().openSocketChannel();
-		channel.socket().setTcpNoDelay(true);
-		channel.connect(adress);
-		channel.configureBlocking(false);
 
-		key = channel.register(selector, SelectionKey.OP_READ);
-		key.attach(session);
-	}
-	
-	protected SelectionKey accept(Selector selector, SocketChannel channel) throws IOException {
-		writeBuffer.clear();
-		readBuffer.clear();
-		readBuffer.flip();
-		currentBufferLength = -1;
-		
 		this.channel = channel;
+		
 		channel.configureBlocking(false);
-		channel.socket().setTcpNoDelay(true);
+		key = channel.register(selector, SelectionKey.OP_READ);
 
-		return key = channel.register(selector, SelectionKey.OP_READ);
+		return key;
 	}
 	
-	//TODO remove copy if possible
-	public void write(ByteBuffer buffer) {
+	public void write(Packet packet) {
 		try {
 			SocketChannel channel = this.channel;
 			if(channel == null) {
 				throw new ClosedChannelException();
 			}
 			
-			synchronized(writeLock) {
+			byte[] data = packet.data();
+			data = DataUtil.writeIntToArray(data, packet.opcode());
+			//TODO encrypt data
+			
+			synchronized(lock) {
 				int start = writeBuffer.position();
 				if(start < 0 || start + 4 > writeBuffer.limit()) {
 					writeBuffer.rewind();
@@ -74,7 +66,7 @@ public class NioTcpPipeline extends NioPipeline {
 				}
 				
 				writeBuffer.position(start + 4);
-				writeBuffer.put(buffer);
+				writeBuffer.put(data);
 				int end = writeBuffer.position();
 				
 				writeBuffer.position(start);
@@ -87,21 +79,30 @@ public class NioTcpPipeline extends NioPipeline {
 					key.selector().wakeup();
 				}
 			}
-		} catch(IOException e) {
-			session.endPoint.fireSessionException(session, e);
+		} catch(Throwable t) {
+			connection().endPoint().fireExceptionThrown(t);
 		}
 	}
-		
-	private boolean writeToSocket() throws IOException {
+	
+	void writeBuffer() throws Exception {
+		synchronized(lock) {
+			if(writeToSocket()) {
+				key.interestOps(SelectionKey.OP_READ);
+			}
+		}
+	}
+	
+	private boolean writeToSocket() throws Exception {
 		SocketChannel channel = this.channel;
 		if(channel == null) {
 			throw new ClosedChannelException();
 		}
-		
+
 		ByteBuffer buffer = writeBuffer;
 		buffer.flip();
-		while (buffer.hasRemaining()) {
-			if (channel.write(buffer) == 0)
+
+		while(buffer.hasRemaining()) {
+			if(channel.write(buffer) == 0)
 				break;
 		}
 		buffer.compact();
@@ -109,8 +110,7 @@ public class NioTcpPipeline extends NioPipeline {
 		return buffer.position() == 0;
 	}
 	
-	@Override
-	protected ByteBuffer readBuffer() throws IOException {
+	Packet readPacket() throws Exception {
 		SocketChannel channel = this.channel;
 		if(channel == null) {
 			throw new ClosedChannelException();
@@ -132,11 +132,11 @@ public class NioTcpPipeline extends NioPipeline {
 			currentBufferLength = readBuffer.getInt();
 			
 			if(currentBufferLength < 0) {
-				throw new InvalidReadException("Invalid buffer length: " + currentBufferLength);
+				throw new IOException("Invalid buffer length: " + currentBufferLength);
 			}
 			
 			if(currentBufferLength > readBuffer.capacity()) {
-				throw new InvalidReadException("Unable to read buffer larger than read buffer: " + currentBufferLength);
+				throw new IOException("Unable to read buffer larger than read buffer: " + currentBufferLength);
 			}
 		}
 		
@@ -149,6 +149,8 @@ public class NioTcpPipeline extends NioPipeline {
 			if(read == -1) {
 				throw new ClosedChannelException();
 			}
+			
+			System.out.println(readBuffer.remaining() + "; " + length);
 			
 			if(readBuffer.remaining() < length) {
 				return null;
@@ -167,43 +169,39 @@ public class NioTcpPipeline extends NioPipeline {
 		readBuffer.limit(limit);
 		
 		if (readBuffer.position() - start != length) {
-			throw new InvalidReadException("Incorrect number of bytes ("+ (start + length - readBuffer.position())
+			throw new IOException("Incorrect number of bytes ("+ (start + length - readBuffer.position())
 									+ " remaining) used to deserialize object: " + buffer);
 		}
 		
-		return buffer;
+		//TODO decrypt data
+		
+		int opcode = DataUtil.readInt(data);
+		length = data.length - 4;
+		
+		byte[] payload = new byte[length];
+		System.arraycopy(data, 4, payload, 0, length);
+		
+		Packet packet = Packet.toPacket(payload, opcode, null);
+		return packet;
 	}
 	
-	@Override
-	protected void writeBuffer() throws IOException {
-		synchronized (writeLock) {
-			if (writeToSocket()) {
-				key.interestOps(SelectionKey.OP_READ);
-			}
-		}
-	}
-	
-	@Override
-	protected void close() {
+	void close() {
 		try {
-			if(channel != null) {
-				channel.close();
-				channel = null;
-				if(key != null) {
-					key.selector().wakeup();
-				}
-			}
-		} catch(IOException e) {
+			channel.close();
+		} catch(Throwable t) {
 		}
-	}
-
-	public InetSocketAddress remoteAddress() {
-		SocketChannel channel = this.channel;
-		if(channel == null) {
-			return null;
+		channel = null;
+		
+		if(key != null) {
+			key.selector().wakeup();
 		}
 		
-		return (InetSocketAddress) channel.socket().getRemoteSocketAddress();
+		clearBuffers();
+	}
+
+	private void clearBuffers() {
+		writeBuffer.clear();
+		readBuffer.clear();
 	}
 
 	public InetSocketAddress localAddress() {
@@ -215,20 +213,21 @@ public class NioTcpPipeline extends NioPipeline {
 		return (InetSocketAddress) channel.socket().getLocalSocketAddress();
 	}
 
-	public TransmissionProtocol protocol() {
+	public InetSocketAddress remoteAddress() {
+		SocketChannel channel = this.channel;
+		if(channel == null) {
+			return null;
+		}
+		
+		return (InetSocketAddress) channel.socket().getRemoteSocketAddress();
+	}
+
+	public final TransmissionProtocol protocol() {
 		return TransmissionProtocol.TCP;
 	}
-	
-	@Override
-	public String toString() {
-		StringBuilder builder = new StringBuilder("Pipeline[Type=NIO, Protocol=TCP, State=");
-		if(channel != null) {
-			builder.append("active, remote=").append(remoteAddress()).
-					append(", local=").append(localAddress());
-		} else {
-			builder.append("inactive");
-		}
-		return builder.append("]").toString();
+
+	public boolean isActive() {
+		return channel != null && channel.isConnected();
 	}
 
 }

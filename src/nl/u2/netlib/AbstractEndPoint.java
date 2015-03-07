@@ -1,68 +1,65 @@
 package nl.u2.netlib;
 
-import java.nio.ByteBuffer;
 import java.util.ArrayList;
-import java.util.List;
+import java.util.Collection;
 
-import nl.u2.netlib.event.SessionConnectedEvent;
-import nl.u2.netlib.event.SessionDisconnectedEvent;
-import nl.u2.netlib.event.SessionExceptionEvent;
-import nl.u2.netlib.event.SessionReceivedEvent;
+import nl.u2.netlib.listener.ConnectionListener;
+import nl.u2.netlib.listener.event.ConnectionDestroyedEvent;
+import nl.u2.netlib.listener.event.ConnectionEstablishedEvent;
+import nl.u2.netlib.listener.event.PacketReceivedEvent;
 
 public abstract class AbstractEndPoint implements EndPoint {
 
-	protected final List<SessionListener> listeners = new ArrayList<SessionListener>();
-
-	public void addListener(SessionListener listener) {
+	private final Collection<ConnectionListener> listeners = new ArrayList<ConnectionListener>();
+	
+	public void addConnectionListener(ConnectionListener listener) {
 		synchronized(listeners) {
 			listeners.add(listener);
 		}
 	}
-	
-	public void removeListener(SessionListener listener) {
+
+	public void removeConnectionListener(ConnectionListener listener) {
 		synchronized(listeners) {
 			listeners.remove(listener);
 		}
 	}
-	
-	public void fireSessionReceived(Session session, TransmissionProtocol protocol, ByteBuffer buffer) {
-		SessionReceivedEvent event = new SessionReceivedEvent(session, protocol, buffer);
-		
+
+	public Collection<ConnectionListener> getConnectionListeners() {
 		synchronized(listeners) {
-			for(SessionListener listener : listeners) {
-				listener.onSessionReceived(event);
-			}
+			return listeners;
 		}
 	}
-	
-	public void fireSessionConnected(Session session) {
-		SessionConnectedEvent event = new SessionConnectedEvent(session);
-		
+
+	public void fireConnectionEstablished(ConnectionEstablishedEvent event) {
 		synchronized(listeners) {
-			for(SessionListener listener : listeners) {
-				listener.onSessionConnected(event);
-			}
-		}
-	}
-	
-	public void fireSessionDisconnected(Session session) {
-		SessionDisconnectedEvent event = new SessionDisconnectedEvent(session);
-		
-		synchronized(listeners) {
-			for(SessionListener listener : listeners) {
-				listener.onSessionDisconnected(event);
+			for(ConnectionListener listener : listeners) {
+				listener.onConnectionEstablished(event);
 			}
 		}
 	}
 
-	public void fireSessionException(Session session, Throwable cause) {
-		SessionExceptionEvent event = new SessionExceptionEvent(session, cause);
-		
+	public void fireConnectionDestroyed(ConnectionDestroyedEvent event) {
 		synchronized(listeners) {
-			for(SessionListener listener : listeners) {
-				listener.onExceptionThrown(event);
+			for(ConnectionListener listener : listeners) {
+				listener.onConnectionDestroyed(event);
+			}
+		}
+	}
+
+	public void firePacketReceived(PacketReceivedEvent event) {
+		synchronized(listeners) {
+			for(ConnectionListener listener : listeners) {
+				listener.onPacketReceived(event);
 			}
 		}
 	}
 	
+	public void fireExceptionThrown(Throwable t) {
+		synchronized(listeners) {
+			for(ConnectionListener listener : listeners) {
+				listener.onExceptionThrown(t);
+			}
+		}
+	}
+
 }
