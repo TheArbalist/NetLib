@@ -2,8 +2,8 @@
 NetLib is a small and stable NIO and OIO networking library. It supports both TCP and UDP. It uses it's own protocol, so it expects you to use NetLib on both client and server side. Currently, there's only a NIO server and only an OIO client. The client uses only two threads and does not require high scalability. However, if someone requests, or if I need it in the future I will defenitely implement it.
 
 ## Todo
--Encryption
--Write proper documentation for all classes
+- Encryption
+- Write proper documentation for all classes
 
 ## Packets
 NetLib doesn't expose direct access to sockets and thus not to streams/ByteBuffers. Instead, it provides high-performance
@@ -36,10 +36,10 @@ Client implements EndPoint, so it can be closed using the EndPoint#close() metho
 
 ## Listeners
 A ConnectionListener can listen to four events:
--A new incoming connection
--A connection that has been closed
--A packet that has been received
--An non-vital exception that was thrown(
+- A new incoming connection
+- A connection that has been closed
+- A packet that has been received
+- A non-vital exception that was thrown(
 
 To receive events, you can attach a ConnectionListener to an EndPoint(Client or Server) using:
 ```java
