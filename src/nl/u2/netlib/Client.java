@@ -1,5 +1,12 @@
 package nl.u2.netlib;
 
+/**
+ * A {@link Client} is an {@link EndPoint} which is connectable. Because a {@link Client} typically
+ * represents a {@link Connection}, it also implements {@link Connection}.
+ * 
+ * @author U2ForMe
+ *
+ */
 public interface Client extends EndPoint, Connection {
 
 	/**

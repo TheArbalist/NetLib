@@ -1,5 +1,12 @@
 package nl.u2.netlib;
 
+/**
+ * A {@link Server} is an {@link EndPoint} which is bindable. It listens for connections.
+ * Note that UDP {@link Server} implementations often also implement {@link Pipeline}.
+ * 
+ * @author U2ForMe
+ *
+ */
 public interface Server extends EndPoint {
 
 	/**
