@@ -1,5 +1,5 @@
 # NetLib
-NetLib is a small and stable NIO and OIO networking library. It supports both TCP and UDP. It uses it's own protocol, so it expects you to use NetLib on both client and server side. Currently, there's only a NIO server and only an OIO client. The client uses only two threads and does not require high scalability. However, if someone requests, or if I need it in the future I will defenitely implement it.
+NetLib is a small and stable NIO and OIO networking library. It supports both TCP and UDP. It uses it's own protocol, so it expects you to use NetLib on both client and server side. Currently, there's only a NIO server. NetLib focuses on stability and scalability, if there's really urgent need for an OIO client, I'll implement it.
 
 ## Todo
 - Encryption
