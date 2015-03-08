@@ -15,6 +15,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 import nl.u2.netlib.AbstractEndPoint;
 import nl.u2.netlib.Server;
+import nl.u2.netlib.exception.InvalidReadException;
 import nl.u2.netlib.listener.event.ConnectionEstablishedEvent;
 import nl.u2.netlib.listener.event.PacketReceivedEvent;
 import nl.u2.netlib.packet.Packet;
@@ -125,9 +126,12 @@ public final class NioServer extends AbstractEndPoint implements Server, Runnabl
 											super.firePacketReceived(new PacketReceivedEvent(connection, packet));
 										}
 									} catch(Throwable t) {
-										connection.close();
+										if(t.getClass() == InvalidReadException.class) {
+											super.fireExceptionThrown(t);
+										} else {
+											connection.close();
+										}
 										
-										//super.fireExceptionThrown(t);
 										continue;
 									}
 								}
@@ -176,7 +180,11 @@ public final class NioServer extends AbstractEndPoint implements Server, Runnabl
 								
 								super.firePacketReceived(new PacketReceivedEvent(connection, packet));
 							} catch(Throwable t) {
-								t.printStackTrace();
+								if(t.getClass() == InvalidReadException.class) {
+									super.fireExceptionThrown(t);
+								} else {
+									close();
+								}
 								
 								continue;
 							}

@@ -14,6 +14,7 @@ import nl.u2.netlib.AbstractEndPoint;
 import nl.u2.netlib.Client;
 import nl.u2.netlib.EndPoint;
 import nl.u2.netlib.Pipeline;
+import nl.u2.netlib.exception.InvalidReadException;
 import nl.u2.netlib.listener.event.ConnectionEstablishedEvent;
 import nl.u2.netlib.listener.event.PacketReceivedEvent;
 import nl.u2.netlib.packet.Packet;
@@ -58,9 +59,11 @@ public class NioClient extends AbstractEndPoint implements Client, Runnable {
 		synchronized(lock) {
 			try {
 				tcp.connect(selector, new InetSocketAddress(host, tcpPort));
-				udpChannel.connect(selector, new InetSocketAddress(host, udpPort));
+				InetSocketAddress address = new InetSocketAddress(host, udpPort);
+				udpChannel.connect(selector, address);
 				
 				udp.local = udpChannel.local;
+				udp.remoteAddress(address);
 				udp.channel = udpChannel;
 				
 				executor = Executors.newSingleThreadExecutor();
@@ -116,9 +119,12 @@ public class NioClient extends AbstractEndPoint implements Client, Runnable {
 										super.firePacketReceived(new PacketReceivedEvent(this, packet));
 									}
 								} catch(Throwable t) {
-									close();
+									if(t.getClass() == InvalidReadException.class) {
+										super.fireExceptionThrown(t);
+									} else {
+										close();
+									}
 									
-									//super.fireExceptionThrown(t);
 									continue;
 								}
 							}
@@ -145,7 +151,11 @@ public class NioClient extends AbstractEndPoint implements Client, Runnable {
 								
 								super.firePacketReceived(new PacketReceivedEvent(this, packet));
 							} catch(Throwable t) {
-								t.printStackTrace();
+								if(t.getClass() == InvalidReadException.class) {
+									super.fireExceptionThrown(t);
+								} else {
+									close();
+								}
 								
 								continue;
 							}

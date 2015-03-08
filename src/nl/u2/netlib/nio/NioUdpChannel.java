@@ -1,6 +1,5 @@
 package nl.u2.netlib.nio;
 
-import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
 import java.nio.ByteBuffer;
@@ -9,6 +8,7 @@ import java.nio.channels.DatagramChannel;
 import java.nio.channels.SelectionKey;
 import java.nio.channels.Selector;
 
+import nl.u2.netlib.exception.InvalidReadException;
 import nl.u2.netlib.packet.Packet;
 import nl.u2.netlib.util.DataUtil;
 
@@ -94,18 +94,18 @@ final class NioUdpChannel implements NioServerChannel {
 
 			int length = readBuffer.getInt();
 			if(length < 0) {
-				throw new IOException("Invalid buffer length: " + length);
+				throw new InvalidReadException("Invalid buffer length: " + length);
 			}
 
 			if(length > readBuffer.capacity()) {
-				throw new IOException("Unable to read buffer larger than read buffer: " + length);
+				throw new InvalidReadException("Unable to read buffer larger than read buffer: " + length);
 			}
 
 			byte[] data = new byte[length];
 			readBuffer.get(data, 0, length);
 
 			if(readBuffer.hasRemaining()) {
-				throw new IOException("Incorrect number of bytes ("+ readBuffer.remaining() + " remaining) used to receive buffer.");
+				throw new InvalidReadException("Incorrect number of bytes ("+ readBuffer.remaining() + " remaining) used to receive buffer.");
 			}
 			
 			//TODO decrypt data

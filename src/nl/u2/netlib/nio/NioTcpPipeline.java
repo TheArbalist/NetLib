@@ -1,6 +1,5 @@
 package nl.u2.netlib.nio;
 
-import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.net.SocketAddress;
@@ -13,6 +12,7 @@ import java.nio.channels.SocketChannel;
 import nl.u2.netlib.AbstractPipeline;
 import nl.u2.netlib.Connection;
 import nl.u2.netlib.TransmissionProtocol;
+import nl.u2.netlib.exception.InvalidReadException;
 import nl.u2.netlib.packet.Packet;
 import nl.u2.netlib.util.DataUtil;
 
@@ -149,11 +149,11 @@ public final class NioTcpPipeline extends AbstractPipeline {
 			currentBufferLength = readBuffer.getInt();
 			
 			if(currentBufferLength < 0) {
-				throw new IOException("Invalid buffer length: " + currentBufferLength);
+				throw new InvalidReadException("Invalid buffer length: " + currentBufferLength);
 			}
 			
 			if(currentBufferLength > readBuffer.capacity()) {
-				throw new IOException("Unable to read buffer larger than read buffer: " + currentBufferLength);
+				throw new InvalidReadException("Unable to read buffer larger than read buffer: " + currentBufferLength);
 			}
 		}
 		
@@ -166,8 +166,6 @@ public final class NioTcpPipeline extends AbstractPipeline {
 			if(read == -1) {
 				throw new ClosedChannelException();
 			}
-			
-			System.out.println(readBuffer.remaining() + "; " + length);
 			
 			if(readBuffer.remaining() < length) {
 				return null;
@@ -186,7 +184,7 @@ public final class NioTcpPipeline extends AbstractPipeline {
 		readBuffer.limit(limit);
 		
 		if (readBuffer.position() - start != length) {
-			throw new IOException("Incorrect number of bytes ("+ (start + length - readBuffer.position())
+			throw new InvalidReadException("Incorrect number of bytes ("+ (start + length - readBuffer.position())
 									+ " remaining) used to deserialize object: " + buffer);
 		}
 		
